@@ -15,17 +15,46 @@ cycle and the productive path use L effective edges, then A >= L(R + J0), so
 
     q_max = 1 - L J0 / A
 
-For m=2, with beta = (eps F^2 - 1)/(F - 1) and x = L J0 / A:
+Write x = L J0 / A. This x is the fraction of the traffic budget that the
+throughput itself uses up. For m=2, with beta = (eps F^2 - 1)/(F - 1):
 
     beta(J0) = x / (F - (F-1) x)
 
-This diverges at x = F/(F-1), that is
 
-    J_c = (A/L) F/(F-1) ~ A/L          <-- J_c goes like 1/L
+THREE POINTS THAT ARE EASY TO CONFUSE
+-------------------------------------
+    x = 1                : eps = 1/F.  The checking stage is completely lost.
+                           All the budget goes into carrying the current and
+                           nothing is left for the futile checking cycles.
+                           THIS IS THE PHYSICAL COLLAPSE POINT.
 
-That is the prediction that links saturation to topology: more stages means a
-longer path, so L is larger and J_c is smaller. This is NOT a fit: L is read
-from the data and it must come out constant.
+    x = 1 + 1/F          : eps = 1. No discrimination at all is left.
+
+    x = 1 + 1/(F-1)      : the denominator vanishes. This is only the pole of
+                           the algebraic extrapolation, already outside the
+                           physical range.
+
+They are all separated by terms of order 1/F, because
+
+    F/(F-1) = 1/(1 - 1/F) = 1 + 1/F + 1/F^2 + ...
+
+so they all collapse onto the same place when F is large. Note that 1/F is also
+the error a single discrimination stage can reach, so the small parameter of the
+expansion is the same number that sets the physics. The approximation is good
+exactly in the regime where proofreading makes sense: if F were small, neither
+the expansion nor the discrimination would be worth anything.
+
+We therefore report the PHYSICAL point:
+
+    J_c = A / L         (exact; this is where eps reaches 1/F)
+
+and keep the pole separately as J_pole, only to compare with a free fit of
+1/beta against 1/J, which extrapolates to the pole and not to J_c. The two differ
+by about 1/F: 2% at F = 50, 5% at F = 20.
+
+In both cases J_c goes like 1/L. That is the prediction that links saturation to
+topology: more stages means a longer path, so L is larger and J_c is smaller.
+This is NOT a fit: L is read from the data and it must come out constant.
 
 Status of the check (m=2, F=50, 60 nodes, 5 points from J0=0.005 to 0.13):
 L = 4.318 with 5.4% spread, with no fitted parameter; the residuals of the
@@ -59,8 +88,22 @@ def beta_of_J(J0, F: float, L: float, A: float = 1.0):
     return x / (F - (F - 1.0) * x)
 
 
-def Jc(F: float, L: float, A: float = 1.0) -> float:
+def Jc(L: float, A: float = 1.0) -> float:
+    """PHYSICAL collapse point: the throughput at which the checking stage is
+    fully lost, that is x = 1 and eps = 1/F. It does not depend on F."""
+    return A / L
+
+
+def J_pole(F: float, L: float, A: float = 1.0) -> float:
+    """Pole of the algebraic form, at x = F/(F-1). It sits about 1/F above J_c
+    and is outside the physical range. Use it only to compare with a free fit of
+    1/beta against 1/J, which extrapolates to this point and not to J_c."""
     return (A / L) * F / (F - 1.0)
+
+
+def J_nodiscrimination(F: float, L: float, A: float = 1.0) -> float:
+    """Throughput at which eps = 1, that is no discrimination at all (x = 1+1/F)."""
+    return (A / L) * (1.0 + 1.0 / F)
 
 
 def L_from_data(J0, wall_meas, F: float, m: int, A: float = 1.0):
@@ -87,5 +130,7 @@ def check(J0, wall_meas, F: float, m: int, A: float = 1.0,
     res = residuals(J0, wall_meas, F, m, Lbar, A)
     return dict(L_per_point=Ls.tolist(), L=Lbar, L_spread=spread,
                 max_abs_residual=float(np.max(np.abs(res))),
-                residuals=res.tolist(), Jc=Jc(F, Lbar, A),
+                residuals=res.tolist(),
+                Jc=Jc(Lbar, A),                 # physical: eps reaches 1/F
+                J_pole=J_pole(F, Lbar, A),      # pole of the algebraic form
                 passes=bool(spread < tol_spread))
