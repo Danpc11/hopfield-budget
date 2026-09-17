@@ -123,10 +123,30 @@ discriminates by $1/(1+q(F-1))$, and with $m-1$ stages
 $$\varepsilon(q)=\frac{1}{F}\big[1+q(F-1)\big]^{-(m-1)},\qquad q_{\max}=1-\frac{L J_0}{A}$$
 
 This gives $1/F^m$ when no throughput is asked, and $1/F$ when the capacity is
-used up. That is the gradual loss of stages, derived rather than fitted. The pole
-follows:
+used up. That is the gradual loss of stages, derived rather than fitted.
 
-$$J_c=\frac{A}{L}\cdot\frac{F}{F-1}\approx\frac{A}{L}\qquad (J_c\propto 1/L)$$
+Write $x = L J_0 / A$: the fraction of the traffic budget that the throughput
+itself uses up. Three points are easy to confuse:
+
+| $x$ | what happens |
+|---|---|
+| $1$ | $\varepsilon = 1/F$. The checking stage is completely lost. **This is the physical collapse point.** |
+| $1 + 1/F$ | $\varepsilon = 1$. No discrimination is left at all. |
+| $1 + \frac{1}{F-1}$ | the denominator vanishes: the pole of the algebraic form, already outside the physical range. |
+
+They are separated by terms of order $1/F$, because
+$\frac{F}{F-1} = 1 + \frac1F + \frac1{F^2} + \cdots$, so for large $F$ they sit
+almost on top of each other. Note that $1/F$ is also the error one
+discrimination stage can reach, so the small parameter of the expansion is the
+same number that sets the physics.
+
+We therefore report the physical point:
+
+$$J_c=\frac{A}{L}\qquad (J_c\propto 1/L)$$
+
+which is exact and does not depend on $F$. `analytic.py` also returns `J_pole`,
+because a free fit of $1/\beta$ against $1/J$ extrapolates to the pole and not
+to $J_c$. The two differ by about $1/F$: 2% at $F=50$, 5% at $F=20$.
 
 `hopfield/analytic.py` checks this against the $m=2$, $F=50$ sweep:
 **L = 4.318 with 5.4% spread and a largest residual of 9.7%, with no fitted
