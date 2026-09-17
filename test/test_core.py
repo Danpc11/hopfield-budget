@@ -119,8 +119,31 @@ def test_analytic_limits():
 
 def test_Jc_scales_inversely_with_L():
     """The prediction that links saturation to topology."""
-    assert an.Jc(50.0, 8.0) < an.Jc(50.0, 4.0)
-    assert an.Jc(50.0, 4.0) * 4.0 == pytest.approx(an.Jc(50.0, 8.0) * 8.0)
+    assert an.Jc(8.0) < an.Jc(4.0)
+    assert an.Jc(4.0) * 4.0 == pytest.approx(an.Jc(8.0) * 8.0)
+
+
+def test_physical_collapse_point_gives_one_stage_left():
+    """At J_c = A/L the whole budget carries the current, so x = 1 and the
+    checking stage is gone: eps = 1/F exactly, for every m."""
+    for F in (20.0, 50.0, 200.0):
+        for m in (2, 3, 4):
+            assert an.wall(an.Jc(4.0), F, m, 4.0) == pytest.approx(1 / F, rel=1e-12)
+
+
+def test_pole_sits_about_one_over_F_above_Jc():
+    """F/(F-1) = 1 + 1/F + 1/F^2 + ... so the gap closes as F grows."""
+    for F in (20.0, 50.0, 200.0):
+        gap = an.J_pole(F, 4.0) / an.Jc(4.0) - 1.0
+        assert gap == pytest.approx(1.0 / (F - 1.0), rel=1e-12)
+        assert gap < 2.0 / F
+    assert an.J_pole(200.0, 4.0) - an.Jc(4.0) < an.J_pole(20.0, 4.0) - an.Jc(4.0)
+
+
+def test_no_discrimination_point_is_between():
+    """Order: J_c (eps=1/F) < J at eps=1 < pole. All within about 1/F."""
+    F, L = 50.0, 4.0
+    assert an.Jc(L) < an.J_nodiscrimination(F, L) < an.J_pole(F, L)
 
 
 # ------------------------------------------------------------- literatura ---
