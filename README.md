@@ -16,30 +16,30 @@ in the one-way fluxes. The two substrates must share the same rates, and that
 constraint is bilinear. So the global problem is solved with spatial branch and
 bound over McCormick envelopes. Upper bounds come from sampling in rate space.
 
-## Install on the cluster
+## Install
 
 ```bash
-git clone https://github.com/<USER>/<REPO>.git
-cd <REPO>
-./setup_cluster.sh          # builds the venv, installs, runs the tests and the verdict
+git clone https://github.com/Danpc11/hopfield-budget.git
+cd hopfield-budget
+./setup.sh          # builds the venv, installs, runs the tests and the verdict
 ```
 
-`setup_cluster.sh` is safe to run again. It ends by printing the verdict for
-epistasis and literature, which needs no sweep. **If that part does not come out
-clean, the environment is wrong and there is no point in launching jobs.**
+`setup.sh` is safe to run again. It ends by printing the verdict for epistasis
+and literature, which needs no sweep. **If that part does not come out clean, the
+environment is wrong and there is no point in starting a sweep.**
 
-### Publish the repository
+### First push
 
 ```bash
 git init -b main
 git add .
 git commit -m "The Hopfield barrier under a finite kinetic budget"
-git remote add origin git@github.com:<USER>/<REPO>.git
+git remote add origin git@github.com:Danpc11/hopfield-budget.git
 git push -u origin main
 ```
 
-`.gitignore` excludes `results/`, `logs/`, `tasks*.txt` and CSV files. The sweep
-writes tens of thousands of JSON files, and they must not go into git. To archive
+`.gitignore` excludes `results/`, `tasks*.txt` and CSV files. The sweep writes
+tens of thousands of JSON files, and they must not go into git. To archive
 results, compress them and upload to Zenodo or to your institute storage.
 
 ### Tests
@@ -57,36 +57,50 @@ GitHub Actions runs them on Python 3.10 and 3.12.
 
 ## Run
 
+Everything runs on one machine. There is no scheduler and no job script.
+
 ```bash
 source env.sh
 
-# 0) check the pipeline
-python make_tasks.py --preset pilot > tasks.txt        # 216 tasks
-sbatch --array=1-$(wc -l < tasks.txt)%50 slurm/array.sbatch
+# 0) check the pipeline (216 points, a few minutes)
+python run_local.py --preset pilot
 python verdict.py --results results
 
 # 1) coarse stage: find the wall
-python make_tasks.py --preset coarse > tasks.txt       # about 9,800 tasks
-sbatch --array=1-$(wc -l < tasks.txt)%100 slurm/array.sbatch
+python run_local.py --preset coarse --jobs 16
 
 # 2) fine stage: dense grid around the wall found in stage 1
-python make_tasks.py --preset refine --from-results results > tasks.txt
-sbatch --array=1-$(wc -l < tasks.txt)%100 slurm/array.sbatch
+python run_local.py --preset refine --jobs 16
 
 # 3) verdict
 python verdict.py --results results
 python aggregate.py --results results --csv summary.csv
 ```
 
-If the scheduler does not like very large arrays:
-`CHUNK=120 sbatch --array=1-$(( ($(wc -l < tasks.txt)+119)/120 ))%25 slurm/chunked.sbatch`
+`--jobs` defaults to all cores minus one. `run_local.py` prints progress and an
+estimated time left.
 
-`run_point.py` **skips JSON files that already exist**, so you can relaunch an
-array and it will continue where it stopped. Writing is atomic (tmp then
-rename), so a killed job never leaves a half-written file.
+**You can stop it with Ctrl-C at any time.** Nothing is lost: every finished
+point is already on disk, and running the same command again continues where it
+stopped. Writing is atomic (write to a temporary file, then rename), so a killed
+run never leaves a half-written file.
 
 Cost: one point takes about 2 seconds with a budget of 30 nodes, and about
-2 minutes with 480 nodes.
+2 minutes with 480 nodes. On 16 cores the coarse stage takes a few hours.
+
+Each solve is single threaded on purpose and the pool gives the parallelism.
+`run_local.py` sets `OMP_NUM_THREADS=1` before importing numpy. If you let BLAS
+open its own threads, the workers fight for the same cores and everything gets
+slower.
+
+If you prefer another tool, `make_tasks.py` writes the same grid as a text file:
+
+```bash
+python make_tasks.py --preset coarse > tasks.txt
+cat tasks.txt | xargs -P 16 -I{} sh -c "{}"
+```
+
+This is slower, because it starts a new Python process for every point.
 
 ## Why two stages
 
@@ -201,21 +215,22 @@ hopfield/models.py     m-stage proofreading network + rate-space seeder
 hopfield/analytic.py   closed-form saturation law and its check
 hopfield/epistasis.py  shared clock, closed-form law and sign constraint
 hopfield/literature.py published values with sources (none of them is fitted)
-run_point.py           one point -> one JSON (atomic, restartable)
-make_tasks.py          grid generator (pilot / coarse / refine)
+hopfield/runner.py     evaluate one point and write its JSON (atomic, restartable)
+run_local.py           run the whole sweep on this machine, with progress and resume
+run_point.py           one single point, for debugging
+make_tasks.py          write the grid as a text file (only if you want another tool)
 aggregate.py           walls, monotonicity and convergence checks, fits
 verdict.py             verdict with criteria fixed in advance + prediction
 tests/                 16 fast tests of the invariants
-slurm/                 array.sbatch and chunked.sbatch
 env.sh                 venv and variables (single-threaded solver)
+setup.sh               one command install and check
 ```
 
 ## Reproducibility
 
-Every JSON stores all the parameters, the seed, the compute node, and the Python
+Every JSON stores all the parameters, the seed, the machine name, and the Python
 and NumPy versions. `env.sh` fixes `PYTHONHASHSEED` and limits BLAS to one
-thread. The solver is single threaded by design and the array gives the
-parallelism, so letting BLAS open threads would only steal cores from other jobs.
+thread.
 
 ## Before you publish the repository
 
