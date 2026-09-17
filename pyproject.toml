@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hopfield-budget"
+version = "0.1.0"
+description = "The Hopfield barrier under a finite kinetic budget: certified convex optimisation and a closed-form saturation law"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {file = "LICENSE"}
+dependencies = ["numpy>=1.24", "scipy>=1.10", "cvxpy>=1.5", "clarabel>=0.7"]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[tool.setuptools]
+packages = ["hopfield"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

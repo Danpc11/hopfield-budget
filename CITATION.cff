@@ -1,0 +1,13 @@
+cff-version: 1.2.0
+message: "If you use this code, please cite the paper."
+title: "The Hopfield barrier under a finite kinetic budget"
+abstract: >-
+  Convex optimisation with certified global optima for the dissipation-function
+  design problem in biochemical networks, a closed-form saturation law, and the
+  epistasis between proofreading and mismatch repair as the second moment of the
+  same constraint.
+authors:
+  - family-names: "<FAMILY NAME>"
+    given-names: "<GIVEN NAME>"
+version: 0.1.0
+license: MIT
