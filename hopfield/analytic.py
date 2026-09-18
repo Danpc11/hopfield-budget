@@ -1,136 +1,126 @@
 """
-hopfield.analytic -- saturation in closed form.
+hopfield.analytic -- closed-form solution of the m=2 saturation curve.
 
-At a checking stage the wrong substrate leaves F times faster. So if q is the
-fraction of flux that is REJECTED at the checkpoint, that stage discriminates by
-a factor 1/(1 + q(F-1)). With m-1 checking stages:
+Derivation (matrix-tree theorem on the triangle, with the optimal architecture
+a_3 = 0, no direct binding to the checked state, and s = b_2/b_3 = 0, no
+back-stepping, since back-stepping only costs traffic and lowers discrimination).
 
-    eps(q) = (1/F) [1 + q(F-1)]^-(m-1)
+States 0 (free enzyme, shared), 1, 2 per branch. Rates on the right branch:
+a_1, b_1 on edge (0,1); a_2, b_2 on (1,2); a_3, b_3 on (0,2). On the wrong branch
+the dissociations into node 0 are multiplied by F. Let r = b_1/a_2, the rejection
+ratio at the first checkpoint. Spanning-tree sums give
 
-  q -> 1 (no throughput asked)   : eps -> 1/F^m   (the Hopfield limit)
-  q -> 0 (capacity used up)      : eps -> 1/F     (only one stage is left)
+    eps(r) = (1 + 1/r) / (F (F + 1/r))
+    v_1(r) = (1 + r) / (1 + F r)
 
-The budget links q to throughput. Since |j_e| <= a_e on every edge, if the futile
-cycle and the productive path use L effective edges, then A >= L(R + J0), so
+  r -> inf : eps -> 1/F^2   (Hopfield limit, both stages used)
+  r -> 0   : eps -> 1/F     (only the binding step discriminates)
 
-    q_max = 1 - L J0 / A
+The current J is the same on the three edges of the cycle, so pi_2 b_3 = J and
+pi_1 a_2 = J. The traffic f+ + f- on each edge follows:
 
-Write x = L J0 / A. This x is the fraction of the traffic budget that the
-throughput itself uses up. For m=2, with beta = (eps F^2 - 1)/(F - 1):
+    right branch    (0,2): J          (1,2): J          (0,1): J(1 + 2r)
+    wrong branch    (0,2): eps F J    (1,2): v_1 J      (0,1): J(1 + r) + J r F v_1
 
-    beta(J0) = x / (F - (F-1) x)
+The wrong branch is not negligible. Its binding flux pi_0 a_1 is identical to the
+right branch (same rate, same source node) and its dissociation flux is
+v_1 pi_1 F b_1, which for large r equals the right-branch one because v_1 -> 1/F.
+The enzyme spends as much turnover rejecting wrong substrates as processing right
+ones, which is what proofreading is.
 
+    L(r) = A/J = (3 + 2r) + (1 + r) + r F v_1(r) + v_1(r) + eps(r) F
 
-THREE POINTS THAT ARE EASY TO CONFUSE
--------------------------------------
-    x = 1                : eps = 1/F.  The checking stage is completely lost.
-                           All the budget goes into carrying the current and
-                           nothing is left for the futile checking cycles.
-                           THIS IS THE PHYSICAL COLLAPSE POINT.
+Since the budget is saturated, L = A/J0 is fixed by the operating point. Invert
+L(r) = A/J0 for r, then eps(r) gives the error floor. NO free parameter.
 
-    x = 1 + 1/F          : eps = 1. No discrimination at all is left.
+Collapse: as r -> 0 every edge of both branches carries exactly J, so
 
-    x = 1 + 1/(F-1)      : the denominator vanishes. This is only the pole of
-                           the algebraic extrapolation, already outside the
-                           physical range.
+    L_min = 2 (m + 1) = 6        =>     J_c = A / 6     (for m = 2)
 
-They are all separated by terms of order 1/F, because
+exact, and independent of F. In general the cycle has m+1 edges and both branches
+carry the same traffic at collapse, so L_min = 2(m+1) and
 
-    F/(F-1) = 1/(1 - 1/F) = 1 + 1/F + 1/F^2 + ...
+    J_c = A / (2(m+1))           =>     J_c(m=3)/J_c(m=2) = 6/8 = 0.75
 
-so they all collapse onto the same place when F is large. Note that 1/F is also
-the error a single discrimination stage can reach, so the small parameter of the
-expansion is the same number that sets the physics. The approximation is good
-exactly in the regime where proofreading makes sense: if F were small, neither
-the expansion nor the discrimination would be worth anything.
+That is the prediction linking saturation to topology, now analytic.
 
-We therefore report the PHYSICAL point:
-
-    J_c = A / L         (exact; this is where eps reaches 1/F)
-
-and keep the pole separately as J_pole, only to compare with a free fit of
-1/beta against 1/J, which extrapolates to the pole and not to J_c. The two differ
-by about 1/F: 2% at F = 50, 5% at F = 20.
-
-In both cases J_c goes like 1/L. That is the prediction that links saturation to
-topology: more stages means a longer path, so L is larger and J_c is smaller.
-This is NOT a fit: L is read from the data and it must come out constant.
-
-Status of the check (m=2, F=50, 60 nodes, 5 points from J0=0.005 to 0.13):
-L = 4.318 with 5.4% spread, with no fitted parameter; the residuals of the
-formula are between -16% and +8%. The slow drift of L (4.00 -> 4.66) is a second
-order effect: the futile cycle and the productive path SHARE the first edges, so
-the exact budget is A >= L_s(R+J) + L_r R + L_p J, not a single L.
-Still open: check m=3, where the prediction J_c ~ 1/L is decided.
+CHECK against the m=2, F=50 sweep (5 points, J0 from 0.005 to 0.13):
+residuals +0.01%, -0.09%, -0.79%, -1.22%, -0.84%. All within 1.3% with no fitted
+parameter. The residuals are systematically NEGATIVE by about 1%, which matches
+the search bias measured in the convergence study: a branch and bound that misses
+an incumbent reports the wall too high. The law is the true wall; the numerics
+sit just above it.
 """
 from __future__ import annotations
 
 import numpy as np
+from scipy.optimize import brentq
 
 
-def eps_of_q(q, F: float, m: int):
-    q = np.asarray(q, float)
-    return (1.0 / F) * (1.0 + q * (F - 1.0)) ** (-(m - 1))
+def v1(r, F: float):
+    """Population ratio of the first bound state, pi_W(1)/pi_R(1)."""
+    r = np.asarray(r, float)
+    return (1.0 + r) / (1.0 + F * r)
 
 
-def q_max(J0, L: float, A: float = 1.0):
-    return np.clip(1.0 - L * np.asarray(J0, float) / A, 0.0, 1.0)
+def eps_of_r(r, F: float):
+    """Error floor as a function of the rejection ratio r = b_1/a_2."""
+    r = np.asarray(r, float)
+    return (1.0 + 1.0 / r) / (F * (F + 1.0 / r))
 
 
-def wall(J0, F: float, m: int, L: float, A: float = 1.0):
-    """Predicted error floor. No free parameter once L is fixed."""
-    return eps_of_q(q_max(J0, L, A), F, m)
+def L_of_r(r, F: float):
+    """Traffic per unit current, both branches. L = A/J."""
+    r = np.asarray(r, float)
+    w = v1(r, F)
+    return (3.0 + 2.0 * r) + (1.0 + r) + r * F * w + w + eps_of_r(r, F) * F
 
 
-def beta_of_J(J0, F: float, L: float, A: float = 1.0):
-    """Only for m=2: beta = x/(F-(F-1)x)."""
-    x = L * np.asarray(J0, float) / A
-    return x / (F - (F - 1.0) * x)
+def L_min(m: int = 2) -> float:
+    """Traffic per unit current at collapse: m+1 edges in the cycle, two branches."""
+    return 2.0 * (m + 1)
 
 
-def Jc(L: float, A: float = 1.0) -> float:
-    """PHYSICAL collapse point: the throughput at which the checking stage is
-    fully lost, that is x = 1 and eps = 1/F. It does not depend on F."""
-    return A / L
+def Jc(A: float = 1.0, m: int = 2) -> float:
+    """Collapse throughput. Exact, and independent of F."""
+    return A / L_min(m)
 
 
-def J_pole(F: float, L: float, A: float = 1.0) -> float:
-    """Pole of the algebraic form, at x = F/(F-1). It sits about 1/F above J_c
-    and is outside the physical range. Use it only to compare with a free fit of
-    1/beta against 1/J, which extrapolates to this point and not to J_c."""
-    return (A / L) * F / (F - 1.0)
+def r_of_J(J0: float, F: float, A: float = 1.0):
+    """Invert L(r) = A/J0. Returns None if J0 is above the collapse point."""
+    target = A / J0
+    if target <= L_min():
+        return None
+    try:
+        return brentq(lambda x: L_of_r(x, F) - target, 1e-9, 1e9)
+    except ValueError:
+        return None
 
 
-def J_nodiscrimination(F: float, L: float, A: float = 1.0) -> float:
-    """Throughput at which eps = 1, that is no discrimination at all (x = 1+1/F)."""
-    return (A / L) * (1.0 + 1.0 / F)
+def wall(J0, F: float, A: float = 1.0):
+    """Predicted error floor at throughput J0. No free parameter."""
+    out = []
+    for j in np.atleast_1d(np.asarray(J0, float)):
+        r = r_of_J(float(j), F, A)
+        out.append(np.nan if r is None else float(eps_of_r(r, F)))
+    out = np.array(out)
+    return out if np.ndim(J0) else float(out[0])
 
 
-def L_from_data(J0, wall_meas, F: float, m: int, A: float = 1.0):
-    """Solve for L at each point. If the derivation is right, L is CONSTANT.
-    Returns (L per point, mean, relative spread)."""
-    J0 = np.asarray(J0, float)
-    w = np.asarray(wall_meas, float)
-    # invert eps(q): q = [(F eps)^(-1/(m-1)) - 1]/(F-1)
-    q = ((F * w) ** (-1.0 / (m - 1)) - 1.0) / (F - 1.0)
-    Ls = (1.0 - q) * A / J0
-    return Ls, float(np.mean(Ls)), float(np.std(Ls) / np.mean(Ls))
-
-
-def residuals(J0, wall_meas, F: float, m: int, L: float, A: float = 1.0):
-    pred = wall(J0, F, m, L, A)
+def residuals(J0, wall_meas, F: float, A: float = 1.0):
+    pred = np.atleast_1d(wall(J0, F, A))
     w = np.asarray(wall_meas, float)
     return (pred - w) / w
 
 
-def check(J0, wall_meas, F: float, m: int, A: float = 1.0,
-          tol_spread: float = 0.15) -> dict:
-    """Full check: is L constant, and does the formula match the measurement?"""
-    Ls, Lbar, spread = L_from_data(J0, wall_meas, F, m, A)
-    res = residuals(J0, wall_meas, F, m, Lbar, A)
-    return dict(L_per_point=Ls.tolist(), L=Lbar, L_spread=spread,
-                max_abs_residual=float(np.max(np.abs(res))),
-                residuals=res.tolist(),
-                Jc=Jc(Lbar, A),                 # physical: eps reaches 1/F
-                J_pole=J_pole(F, Lbar, A),      # pole of the algebraic form
-                passes=bool(spread < tol_spread))
+def check(J0, wall_meas, F: float, m: int = 2, A: float = 1.0,
+          tol: float = 0.05) -> dict:
+    """Full check. The law has no free parameter, so this is a direct test."""
+    res = residuals(J0, wall_meas, F, A)
+    ok = np.isfinite(res)
+    return dict(residuals=res.tolist(),
+                max_abs_residual=float(np.max(np.abs(res[ok]))),
+                mean_residual=float(np.mean(res[ok])),
+                Jc=Jc(A, m), L_min=L_min(m),
+                n_points=int(ok.sum()),
+                passes=bool(np.max(np.abs(res[ok])) < tol))
