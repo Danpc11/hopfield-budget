@@ -101,49 +101,45 @@ M2_J0 = [5e-3, 2e-2, 4e-2, 8e-2, 1.3e-1]
 M2_WALL_RATIO = [1.020, 1.088, 1.205, 1.538, 2.460]      # measured, F=50, 60 nodes
 
 
-def test_analytic_law_recovers_constant_L():
-    """The L we solve for must be CONSTANT. Nothing is fitted."""
+def test_closed_form_law_matches_sweep_with_no_free_parameter():
+    """The law has no fitted parameter, so this is a direct test, not a fit."""
     w = [r / 50.0 ** 2 for r in M2_WALL_RATIO]
-    c = an.check(M2_J0, w, 50.0, 2)
-    assert c["L_spread"] < 0.10
-    assert c["max_abs_residual"] < 0.20
-    assert 0.1 < c["Jc"] < 0.5
+    c = an.check(M2_J0, w, 50.0)
+    assert c["n_points"] == 5
+    assert c["max_abs_residual"] < 0.02
 
 
-def test_analytic_limits():
-    """q->1 gives 1/F^m (Hopfield); q->0 gives 1/F (only one stage left)."""
+def test_residuals_are_biased_low_by_the_search_bias():
+    """The branch and bound reports the wall too high when it misses an
+    incumbent, by about 1% (see the convergence study). So the law must sit
+    slightly BELOW the numerics, not scatter around them."""
+    w = [r / 50.0 ** 2 for r in M2_WALL_RATIO]
+    c = an.check(M2_J0, w, 50.0)
+    assert -0.02 < c["mean_residual"] < 0.0
+
+
+def test_analytic_limits_in_r():
+    """r -> inf gives 1/F^m (Hopfield); r -> 0 gives 1/F (one stage left)."""
+    for F in (20.0, 50.0, 200.0):
+        assert an.eps_of_r(1e9, F) == pytest.approx(F ** -2, rel=1e-6)
+        assert an.eps_of_r(1e-9, F) == pytest.approx(1 / F, rel=1e-6)
+
+
+def test_collapse_traffic_is_two_branches_times_cycle_length():
+    """At collapse every edge of both branches carries exactly J."""
     for m in (2, 3, 4):
-        assert an.eps_of_q(1.0, 50.0, m) == pytest.approx(50.0 ** -m, rel=1e-12)
-        assert an.eps_of_q(0.0, 50.0, m) == pytest.approx(1 / 50.0, rel=1e-12)
+        assert an.L_min(m) == pytest.approx(2 * (m + 1))
+    assert an.L_of_r(1e-9, 50.0) == pytest.approx(an.L_min(2), rel=1e-6)
 
 
-def test_Jc_scales_inversely_with_L():
-    """The prediction that links saturation to topology."""
-    assert an.Jc(8.0) < an.Jc(4.0)
-    assert an.Jc(4.0) * 4.0 == pytest.approx(an.Jc(8.0) * 8.0)
+def test_Jc_is_exact_and_independent_of_F():
+    assert an.Jc(1.0, 2) == pytest.approx(1 / 6)
+    assert an.Jc(2.0, 2) == pytest.approx(2 / 6)
 
 
-def test_physical_collapse_point_gives_one_stage_left():
-    """At J_c = A/L the whole budget carries the current, so x = 1 and the
-    checking stage is gone: eps = 1/F exactly, for every m."""
-    for F in (20.0, 50.0, 200.0):
-        for m in (2, 3, 4):
-            assert an.wall(an.Jc(4.0), F, m, 4.0) == pytest.approx(1 / F, rel=1e-12)
-
-
-def test_pole_sits_about_one_over_F_above_Jc():
-    """F/(F-1) = 1 + 1/F + 1/F^2 + ... so the gap closes as F grows."""
-    for F in (20.0, 50.0, 200.0):
-        gap = an.J_pole(F, 4.0) / an.Jc(4.0) - 1.0
-        assert gap == pytest.approx(1.0 / (F - 1.0), rel=1e-12)
-        assert gap < 2.0 / F
-    assert an.J_pole(200.0, 4.0) - an.Jc(4.0) < an.J_pole(20.0, 4.0) - an.Jc(4.0)
-
-
-def test_no_discrimination_point_is_between():
-    """Order: J_c (eps=1/F) < J at eps=1 < pole. All within about 1/F."""
-    F, L = 50.0, 4.0
-    assert an.Jc(L) < an.J_nodiscrimination(F, L) < an.J_pole(F, L)
+def test_Jc_ratio_between_m2_and_m3_is_three_quarters():
+    """The topology prediction, now analytic: 6/8."""
+    assert an.Jc(1.0, 3) / an.Jc(1.0, 2) == pytest.approx(0.75)
 
 
 # ------------------------------------------------------------- literatura ---
