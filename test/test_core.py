@@ -125,21 +125,27 @@ def test_analytic_limits_in_r():
         assert an.eps_of_r(1e-9, F) == pytest.approx(1 / F, rel=1e-6)
 
 
-def test_collapse_traffic_is_two_branches_times_cycle_length():
-    """At collapse every edge of both branches carries exactly J."""
-    for m in (2, 3, 4):
-        assert an.L_min(m) == pytest.approx(2 * (m + 1))
-    assert an.L_of_r(1e-9, 50.0) == pytest.approx(an.L_min(2), rel=1e-6)
+def test_traffic_is_not_monotone_in_the_rejection_ratio():
+    """L(0) = 2(m+1) = 6, but a small rejection ratio lowers the traffic by
+    suppressing the wrong branch. Missing this puts the collapse point in the
+    wrong place."""
+    for F in (20.0, 50.0, 200.0):
+        assert an.L_of_r(1e-12, F) == pytest.approx(6.0, rel=1e-6)
+        assert an.L_min(F) < 6.0
+        assert an.r_star(F) > 0.0
 
 
-def test_Jc_is_exact_and_independent_of_F():
-    assert an.Jc(1.0, 2) == pytest.approx(1 / 6)
-    assert an.Jc(2.0, 2) == pytest.approx(2 / 6)
+def test_asymptotic_form_of_the_minimum_traffic():
+    """L_min = 5 + 4/sqrt(F) and r* = 1/(2 sqrt(F)), to leading order."""
+    for F, tol in ((200.0, 0.02), (1e4, 2e-3)):
+        assert an.L_min(F) == pytest.approx(an.L_min_asymptotic(F), rel=tol)
+        assert an.r_star(F) == pytest.approx(1 / (2 * np.sqrt(F)), rel=0.15)
 
 
-def test_Jc_ratio_between_m2_and_m3_is_three_quarters():
-    """The topology prediction, now analytic: 6/8."""
-    assert an.Jc(1.0, 3) / an.Jc(1.0, 2) == pytest.approx(0.75)
+def test_Jc_matches_the_independent_free_fit():
+    """A free fit of 1/beta against 1/J gave 0.182 for F = 50, A = 1."""
+    assert an.Jc(50.0, 1.0) == pytest.approx(0.182, rel=0.02)
+    assert an.Jc(50.0, 2.0) == pytest.approx(2 * an.Jc(50.0, 1.0))
 
 
 # ------------------------------------------------------------- literatura ---
