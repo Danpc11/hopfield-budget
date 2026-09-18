@@ -67,51 +67,96 @@ def proofreading(m: int, F: float, eps: float, J0: float,
     return builder, m
 
 
+def _architecture_edges(m, F, r, w, tiny=1e-9):
+    """Rates for the optimal architecture: a chain 0->1->...->m, no direct
+    binding to checked states, no back-stepping, and a rejection edge k->0 from
+    every bound state. r[k] is the rejection ratio at state k+1, w[k] the
+    forward rate out of it."""
+    tmpl, n, _, _, R, W = topology(m)
+    edges = []
+    for (i, j) in tmpl:
+        if i == 0 and j == 1:
+            kf, kb = w[0], r[0]
+        elif i == 0:
+            kf, kb = tiny, r[j - 1]          # no direct binding; rejection k->0
+        elif j == i + 1:
+            kf, kb = w[i], tiny              # forward step, no back-step
+        else:
+            kf, kb = tiny, tiny
+        Fd = F if i == 0 else 1.0
+        edges.append((R(i), R(j), kf, kb))
+        edges.append((W(i), W(j), kf, kb * Fd))
+    return edges, n, R, W
+
+
+def _random_edges(m, F, rng, lo, hi, drive_max):
+    """Random rates with a random cycle affinity injected."""
+    tmpl, n, _, _, R, W = topology(m)
+    kf = np.exp(rng.uniform(lo, hi, len(tmpl)))
+    kb = np.exp(rng.uniform(lo, hi, len(tmpl)))
+    internal = [t for t, (i, j) in enumerate(tmpl) if i > 0]
+    if internal:
+        d = rng.uniform(0.0, drive_max) / (2.0 * len(internal))
+        for t in internal:
+            kf[t] *= np.exp(d)
+            kb[t] *= np.exp(-d)
+    edges = []
+    for t, (i, j) in enumerate(tmpl):
+        Fd = F if i == 0 else 1.0
+        edges.append((R(i), R(j), kf[t], kb[t]))
+        edges.append((W(i), W(j), kf[t], kb[t] * Fd))
+    return edges, n, R, W
+
+
 def rate_space_seeder(m: int, F: float, eps_target=None, n_draw: int = 300,
                       lo: float = -4.0, hi: float = 4.0, drive_max=None,
-                      keep: int = 40):
+                      keep: int = 40, arch_frac: float = 0.7,
+                      r_lo: float = -1.0, r_hi: float = 5.0):
     """Candidate v values built in RATE space.
 
-    Sampling rates WITHOUT DRIVING does not work: the resulting v_m is about
-    1/F, but the wall is at 1/F^m. The candidates fall inside the box, but they
-    break the functional constraint v_m <= eps. Then the branch and bound finds
-    no incumbent. The symptom is feasibility that is NOT MONOTONE in eps, which
-    is physically impossible.
+    Random rates alone do NOT work. Whatever driving you inject, the resulting
+    v_m stays around 1/F while the wall is at 1/F^m. The candidates fall inside
+    the box but break v_m <= eps, the branch and bound finds no incumbent, and
+    the symptom is feasibility that is not monotone in eps, which is physically
+    impossible. At m=3 this made every point undetermined.
 
-    So this seeder adds a random cycle affinity. If you give it eps_target, it
-    returns the candidates closest to that target. drive_max grows with m,
-    because you need about m ln F nats of driving to reach 1/F^m."""
-    tmpl, n, _, _, R, W = topology(m)
+    The fix is to build most seeds from the OPTIMAL ARCHITECTURE instead of
+    sampling blindly: a chain with a rejection edge at every checkpoint, with the
+    rejection ratios r_k as the free parameters. That family does reach 1/F^m.
+    Measured at m=3, F=50: r ~ 1e2 gives v_m F^3 = 1.045, so the wall is
+    reachable, while random sampling never got below about 1/F.
+
+    A fraction (1 - arch_frac) still comes from random driven rates, because the
+    architecture family is a low-dimensional slice and the true optimum can sit
+    off it, in particular at high throughput where the architecture changes."""
     if drive_max is None:
         drive_max = 3.0 * m * np.log(F)
-    internal = [t for t, (i, j) in enumerate(tmpl) if i > 0]
+    n_arch = int(round(n_draw * arch_frac))
 
     def seeder(box, rng):
         scored = []
-        for _ in range(n_draw):
-            kf = np.exp(rng.uniform(lo, hi, len(tmpl)))
-            kb = np.exp(rng.uniform(lo, hi, len(tmpl)))
-            if internal:
-                d = rng.uniform(0.0, drive_max) / (2.0 * len(internal))
-                for t in internal:
-                    kf[t] *= np.exp(d)
-                    kb[t] *= np.exp(-d)
-            edges = []
-            for t, (i, j) in enumerate(tmpl):
-                Fd = F if i == 0 else 1.0
-                edges.append((R(i), R(j), kf[t], kb[t]))
-                edges.append((W(i), W(j), kf[t], kb[t] * Fd))
+        for k in range(n_draw):
+            if k < n_arch:
+                r = 10.0 ** rng.uniform(r_lo, r_hi, m)
+                if rng.random() < 0.5:            # half with a common ratio
+                    r[:] = r[0]
+                w = np.exp(rng.uniform(-1.0, 1.0, max(m, 1)))
+                edges, n, R, W = _architecture_edges(m, F, r, w)
+            else:
+                edges, n, R, W = _random_edges(m, F, rng, lo, hi, drive_max)
             try:
                 net = Net(n, edges)
             except Exception:
                 continue
             pi = net.pi
-            v = np.array([pi[W(k)] / pi[R(k)] for k in range(1, m + 1)])
+            if np.any(pi <= 0):
+                continue
+            v = np.array([pi[W(k2)] / pi[R(k2)] for k2 in range(1, m + 1)])
             if not np.all(np.isfinite(v)):
                 continue
-            if not all(box[k][0] <= v[k] <= box[k][1] for k in range(m)):
+            if not all(box[q][0] <= v[q] <= box[q][1] for q in range(m)):
                 continue
-            scored.append((float(v[m - 1]), v))   # sort later by error reached
+            scored.append((float(v[m - 1]), v))
         if not scored:
             return []
         if eps_target is None:
