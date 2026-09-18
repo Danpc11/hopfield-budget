@@ -58,6 +58,13 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from hopfield.sigp import wall_sigp
 from hopfield import analytic as an
 
+if not hasattr(an, "r_star"):
+    raise SystemExit(
+        "hopfield/analytic.py is the old version: it has no r_star().\n"
+        "That version puts the collapse point at A/2(m+1), which uses L(0) "
+        "instead of min_r L(r) and is about 5% low at F=20 and 9% low at F=50.\n"
+        "Update hopfield/analytic.py and tests/test_core.py before running.")
+
 _CFG = {}
 
 
@@ -97,7 +104,7 @@ def merge(best, new):
     for J0, (eps, x) in new.items():
         if eps is None:
             continue
-        if best.get(J0) is None or eps < best[J0][0] * (1 - 1e-9):
+        if best.get(J0) is None or eps < best[J0][0] * (1 - 1e-6):
             best[J0] = (eps, x)
             improved = True
     return improved
@@ -113,6 +120,8 @@ def main():
     ap.add_argument("--A", type=float, default=1.0, help="traffic budget")
     ap.add_argument("--starts", type=int, default=8, help="random starts per point")
     ap.add_argument("--sweeps", type=int, default=4, help="rounds of continuation")
+    ap.add_argument("--n-ladder", type=int, default=6,
+                    help="auxiliary easy throughputs used only as seeds")
     ap.add_argument("--chains", type=int, default=0,
                     help="chains per round (0 = one per worker)")
     ap.add_argument("--iters", type=int, default=40, help="condensation steps")
@@ -139,41 +148,62 @@ def main():
     J0 = [float(x) for x in (a.J0 or np.geomspace(Jc / 60, Jc * 0.92, a.n_J0))]
     J0.sort()
 
+    # Auxiliary ladder. Close to the collapse point a random start almost never
+    # lands in the feasible set, so asking only for J0 near J_c leaves phase 1
+    # with nothing and the chains with no seed. We therefore always solve a few
+    # easy throughputs below the requested range and let the chains walk up from
+    # them. These are seeds only and are not reported.
+    # The ladder is spaced in log(J_c - J), not in log J. Near the pole the error
+    # floor depends on the distance to collapse, so a grid that is geometric in
+    # J0 leaves its largest step exactly where the problem is most sensitive and
+    # the continuation cannot bridge it.
+    ladder = []
+    if min(J0) > Jc / 20:
+        d_far, d_near = Jc - Jc / 60, Jc - min(J0)
+        ladder = [float(Jc - d) for d in
+                  np.geomspace(d_far, d_near * 1.02, max(4, a.n_ladder))]
+    work = sorted(set(ladder + J0))
+    if ladder:
+        print(f"auxiliary ladder: {len(ladder)} extra throughputs from "
+              f"{ladder[0]:.4g} to {ladder[-1]:.4g}, used as seeds only")
+
     print(f"m={a.m}  F={a.F:g}  A={a.A:g}   wall 1/F^m = {a.F ** -a.m:.3e}")
     print(f"collapse J_c = {Jc:.4f}   ({Jc_kind})")
     print(f"{len(J0)} throughputs, {a.starts} starts, {a.sweeps} rounds, "
           f"{chains} chains, {jobs} workers, 1 thread each\n")
 
     cfg = dict(m=a.m, F=a.F, A=a.A, iters=a.iters)
-    best, t0 = {}, time.time()
+    best, t0 = {j: None for j in work}, time.time()
     pool = Pool(jobs, initializer=_init, initargs=(cfg,))
     try:
         # ---- phase 1: independent solves, embarrassingly parallel ----
-        tasks = [(j, s, None) for j in J0 for s in range(a.starts)]
+        tasks = [(j, s, None) for j in work for s in range(a.starts)]
         done = 0
         for J, res in pool.imap_unordered(_solve_one, tasks, chunksize=1):
             merge(best, {J: res})
             done += 1
             print(f"\rphase 1: {done}/{len(tasks)}  "
-                  f"points solved {sum(1 for v in best.values() if v)}/{len(J0)}",
+                  f"points solved {sum(1 for v in best.values() if v)}/{len(work)}",
                   end="", flush=True)
         print()
 
         seeds = [v[1] for v in best.values() if v]
         if not seeds:
-            print("no feasible point found; raise --starts")
+            print("no feasible point found; raise --starts, or check that J0 "
+                  "is below the collapse point")
+            pool.close()
             return
 
         # ---- phase 2: parallel continuation chains, both directions ----
         for rnd in range(a.sweeps):
             tsk = [(1 if c % 2 == 0 else -1,
-                    seeds[c % len(seeds)], J0) for c in range(chains)]
+                    seeds[c % len(seeds)], work) for c in range(chains)]
             improved = False
             for out in pool.imap_unordered(_run_chain, tsk, chunksize=1):
                 improved |= merge(best, out)
             seeds = [v[1] for v in best.values() if v] or seeds
-            cov = sum(1 for v in best.values() if v)
-            print(f"round {rnd + 1}/{a.sweeps}: {cov}/{len(J0)} points, "
+            cov = sum(1 for j in J0 if best.get(j))
+            print(f"round {rnd + 1}/{a.sweeps}: {cov}/{len(J0)} reported points, "
                   f"{'improved' if improved else 'no change'}")
             if not improved:
                 break
