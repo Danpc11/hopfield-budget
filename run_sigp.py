@@ -122,12 +122,25 @@ def main():
 
     jobs = a.jobs or (os.cpu_count() or 1)
     chains = a.chains or jobs
-    Jc = a.A / (2 * (a.m + 1))                 # analytic collapse point
-    J0 = [float(x) for x in (a.J0 or np.geomspace(Jc / 60, Jc * 0.55, a.n_J0))]
+
+    # Collapse throughput. L(r), the traffic per unit current, is NOT monotone:
+    # a small rejection ratio suppresses the wrong branch and saves more turnover
+    # than the futile cycle costs, so the minimum sits at r* = 1/(2 sqrt(F)) and
+    # not at r = 0. Using L(0) = 2(m+1) instead of min_r L(r) puts the collapse
+    # point about 5% too low at F = 20 and 9% too low at F = 50.
+    if a.m == 2:
+        Jc, Jc_kind = an.Jc(a.F, a.A), "A/L_min"
+    else:
+        # L(r) has only been counted for m = 2. L(0) = 2(m+1) is an upper bound
+        # on L_min, so A/L(0) is a LOWER bound on J_c and the default grid stays
+        # inside the feasible range, which is what we want.
+        Jc, Jc_kind = a.A / (2 * (a.m + 1)), "A/2(m+1), lower bound"
+
+    J0 = [float(x) for x in (a.J0 or np.geomspace(Jc / 60, Jc * 0.92, a.n_J0))]
     J0.sort()
 
     print(f"m={a.m}  F={a.F:g}  A={a.A:g}   wall 1/F^m = {a.F ** -a.m:.3e}")
-    print(f"analytic collapse J_c = A/(2(m+1)) = {Jc:.4f}")
+    print(f"collapse J_c = {Jc:.4f}   ({Jc_kind})")
     print(f"{len(J0)} throughputs, {a.starts} starts, {a.sweeps} rounds, "
           f"{chains} chains, {jobs} workers, 1 thread each\n")
 
