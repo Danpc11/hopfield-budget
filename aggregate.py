@@ -111,6 +111,8 @@ def main():
 
     recs = load(a.results)
     print(f"{len(recs)} records read")
+    if not recs:
+        raise SystemExit(f"no results in '{a.results}'. Run run_local.py first.")
     nerr = sum(1 for r in recs if r.get("status") == "error")
     if nerr:
         print(f"  [warning] {nerr} points failed to run")
