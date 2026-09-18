@@ -33,9 +33,14 @@ Single machine, no scheduler.
 
 ```bash
 source env.sh
-python run_local.py --preset pilot                 # 216 points, pipeline check
-python run_local.py --preset coarse --jobs 16      # stage 1: locate the wall
-python run_local.py --preset refine --jobs 16      # stage 2: fine grid around it
+# the signomial route: one optimisation per (m, F, J0), about 20x faster
+python run_sigp.py --m 2 --F 50 --n-J0 5 --starts 8 --sweeps 3   # control
+python run_sigp.py --m 3 --F 20 --n-J0 10 --starts 48 --sweeps 8 --jobs 20
+
+# the branch and bound sweep, kept as an independent check
+python run_local.py --preset pilot --jobs 20       # pipeline check
+python run_local.py --preset coarse --jobs 20      # stage 1: locate the wall
+python run_local.py --preset refine --jobs 20      # stage 2: fine grid around it
 python verdict.py --results results
 python aggregate.py --results results --csv summary.csv
 ```
@@ -62,16 +67,16 @@ generation; every point stays independent and restartable.
 ## Closed-form law
 
 The saturation curve is solved analytically for $m=2$, with no free parameter.
-Apply the matrix-tree theorem to the triangle with the optimal architecture
-($a_3=0$, no direct binding to the checked state; $s=b_2/b_3=0$, no
-back-stepping). With $r=b_1/a_2$ the rejection ratio at the first checkpoint,
+Apply the matrix-tree theorem to the triangle with the optimal architecture (no
+direct binding to the checked state, no back-stepping). With $r=b_1/a_2$ the
+rejection ratio at the first checkpoint,
 
 $$\varepsilon(r)=\frac{1+1/r}{F\,(F+1/r)},\qquad v_1(r)=\frac{1+r}{1+Fr}$$
 
 giving $1/F^2$ as $r\to\infty$ and $1/F$ as $r\to 0$. The current is the same on
-the three edges of the cycle, so the traffic per edge follows, and the wrong
-branch is not negligible: its binding flux is identical and its dissociation flux
-is $v_1\pi_1Fb_1$, which equals the right-branch one for large $r$ because
+the three edges of the cycle, so the traffic per edge follows. The wrong branch
+is not negligible: its binding flux is identical and its dissociation flux is
+$v_1\pi_1Fb_1$, which equals the right-branch one for large $r$ because
 $v_1\to 1/F$. Hence
 
 $$L(r)=\frac{A}{J}=(3+2r)+(1+r)+rFv_1(r)+v_1(r)+\varepsilon(r)F$$
@@ -79,20 +84,40 @@ $$L(r)=\frac{A}{J}=(3+2r)+(1+r)+rFv_1(r)+v_1(r)+\varepsilon(r)F$$
 Since the budget is saturated, $L=A/J_0$ is fixed by the operating point: invert
 $L(r)=A/J_0$ and read $\varepsilon(r)$.
 
-At collapse ($r\to0$) every edge of both branches carries exactly $J$, so
-$L_{\min}=2(m+1)$ and
+### Collapse: $L(r)$ is not monotone
 
-$$J_c=\frac{A}{2(m+1)}\qquad\Longrightarrow\qquad \frac{J_c(m{=}3)}{J_c(m{=}2)}=\frac{6}{8}=0.75$$
+Setting $r=0$ gives $L=2(m+1)=6$, twice the cycle length, because both branches
+then carry the full current on every edge. **That is not the minimum.** Using
+$\varepsilon F=v_1$ and writing $u=Fr$,
 
-exact and independent of $F$. This is the prediction linking saturation to
-topology, and it is the content of criterion S5.
+$$L(u)=4+3r+(1+r)\frac{u+2}{1+u}\;\simeq\;5+\frac{1}{u}+\frac{4u}{F}$$
+
+which has an interior minimum at $u^{*}=\sqrt{F}/2$:
+
+$$r^{*}=\frac{1}{2\sqrt{F}},\qquad L_{\min}=5+\frac{4}{\sqrt{F}}+O(F^{-1}),\qquad J_c=\frac{A}{L_{\min}}$$
+
+A small rejection ratio suppresses the wrong branch ($v_1<1$) and saves more
+turnover than the futile cycle costs. So the machine does **not** switch
+proofreading off at collapse; it holds $r^{*}$, and $n_{\rm eff}$ stops at $1.31$
+rather than $1$ for $F=50$.
+
+$J_c$ therefore depends on $F$, weakly. At $F=50$, $A=1$ the numerical minimum
+gives $J_c=0.1818$, against $0.182$ from an independent free fit of the numerics.
+The asymptotic form is accurate to $1.2\%$ at $F=50$ and $0.1\%$ at $F=10^4$;
+`analytic.py` uses the numerical minimum, via `r_star()`.
+
+An earlier version of this file claimed $J_c=A/2(m+1)$, exact and independent of
+$F$, together with $J_c(m{=}3)/J_c(m{=}2)=3/4$. That was wrong: it used $L(0)$
+instead of $\min_r L(r)$. The traffic count has to be redone stage by stage for
+$m>2$, and we have not done it, so there is currently no prediction for the
+ratio.
 
 Check against the $m=2$, $F=50$ sweep (5 points, $J_0$ from 0.005 to 0.13):
 residuals $+0.01\%$, $-0.09\%$, $-0.79\%$, $-1.22\%$, $-0.84\%$. All within
-1.3% with nothing fitted. The residuals are systematically negative by about 1%,
-matching the search bias measured in the convergence study: a branch and bound
-that misses an incumbent reports the wall too high. The law is the true wall and
-the numerics sit just above it.
+$1.3\%$ with nothing fitted. The residuals are systematically negative by about
+$1\%$, matching the search bias measured in the convergence study: a branch and
+bound that misses an incumbent reports the wall too high. The law is the true
+wall and the numerics sit just above it.
 
 The sweep therefore tests a parameter-free prediction. A1 checks the size of the
 residuals, A2 checks their sign.
@@ -141,8 +166,10 @@ theoretical wall $1/F^3$. They are valid upper bounds, not converged ones:
 condensation reaches a KKT point, and three starts with two sweeps is not enough.
 More starts and more sweeps are now cheap, since one solve costs seconds.
 
-So $J_c \propto 1/(m+1)$, the content of criterion S5, is still unverified. The
-route is open and inexpensive; it needs compute, not new ideas.
+So the behaviour of $J_c$ with $m$, the content of criterion S5, is still
+unverified, and the traffic count of the previous section has not been redone for
+$m>2$. The route is open and inexpensive; it needs compute for the numerics and
+algebra for the count.
 
 ## Verdict pipeline
 
@@ -188,12 +215,13 @@ hopfield/analytic.py   closed-form saturation law and its check
 hopfield/epistasis.py  shared clock, closed-form law, sign constraint
 hopfield/literature.py published values with sources (none fitted)
 hopfield/runner.py     evaluate one point, write its JSON (atomic, restartable)
-run_local.py           full sweep on one machine, with progress and resume
+run_sigp.py            the wall by signomial programming, parallel (preferred)
+run_local.py           full branch-and-bound sweep, with progress and resume
 run_point.py           single point, for debugging
 make_tasks.py          grid as a text file, for external tools
 aggregate.py           walls, monotonicity and convergence checks, fits
 verdict.py             criteria fixed in advance, verdict and prediction
-tests/                 19 tests of the invariants (~10 s)
+tests/                 25 tests of the invariants (~55 s)
 env.sh, setup.sh       environment and one-command install
 ```
 
