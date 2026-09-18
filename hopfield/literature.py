@@ -6,8 +6,6 @@ two frameworks. None of them is fitted.
 """
 from __future__ import annotations
 
-import numpy as np
-
 from .epistasis import cv_from_fold
 
 # --------------------------------------------------------------------------
