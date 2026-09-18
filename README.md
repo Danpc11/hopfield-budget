@@ -97,18 +97,52 @@ the numerics sit just above it.
 The sweep therefore tests a parameter-free prediction. A1 checks the size of the
 residuals, A2 checks their sign.
 
+### Signomial route
+
+The flux formulation is convex, but the shared-rate constraint is bilinear, and
+at small $v$ the positive cone becomes empty in the directions the branch and
+bound explores. At $m=3$ that made every point come out "undetermined", which is
+a search failure and not physics.
+
+`hopfield/sigp.py` removes $v$ from the problem. By the matrix-tree theorem every
+stationary weight is a **posynomial** in the rates, so
+
+$$\varepsilon=\frac{\rho_{W(m)}}{\rho_{R(m)}},\qquad J=\frac{\rho_ik_{ij}-\rho_jk_{ji}}{Z},\qquad A=\frac{\sum_e(\rho_ik_{ij}+\rho_jk_{ji})}{Z}$$
+
+are all ratios of posynomials: a signomial program. The standard solution is
+condensation (Duffin, Peterson and Zener 1967; see Chiang's review): replace the
+posynomial on the right of each inequality by its monomial lower bound from the
+arithmetic-geometric mean inequality at the current point, which makes every step
+a geometric program, convex in the log-rates, and iterate. Each subproblem is an
+inner approximation, so anything it returns is feasible for the original problem.
+
+Two further points matter in practice. The continuation in $J_0$ must sweep
+**both ways**: going up only, the early points keep whatever local optimum the
+random starts found while later ones inherit better solutions, and the wall comes
+out *decreasing* with $J_0$, which is impossible. And the traffic posynomial has
+one term per (edge, spanning tree) pair, about 6000 at $m=3$; merging repeated
+exponents brings it to 528 and a single solve from tens of seconds to 1.4 s.
+
+Validation at $m=2$, $F=50$, against the closed-form law: all five points agree
+to four decimals (+0.00%) in 8 seconds. The branch and bound needed about 190 s
+for three points and sat 1% high. The two methods are independent, so their
+agreement is the strongest check we have on the law.
+
+```python
+from hopfield.sigp import wall_curve
+wall_curve(m=3, F=20.0, J0_list=[3e-3, 1e-2, 2e-2, 4e-2], starts=3, sweeps=2)
+```
+
 ### Open
 
-The derivation above is for $m=2$. The generalisation $L_{\min}=2(m+1)$ follows
-from the same counting, but $J_c \propto 1/(m+1)$ is not yet verified
-numerically. With three outer dimensions the seeder does not reach the target
-region: undriven rate sampling gives $v_m \sim 1/F$ while the wall is at
-$1/F^m$, so candidates lie inside the box but violate $v_m \le \varepsilon$ and
-no incumbent is found. The symptom is feasibility that is not monotone in
-$\varepsilon$. `rate_space_seeder` already injects a cycle affinity scaling as
-$3m\ln F$ and filters by distance to target; this is not sufficient at $m=3$
-with 40 nodes. The likely fix is to construct seeds backwards from the target
-using the matrix-tree theorem, which is also what produced the closed form above.
+At $m=3$ the signomial route runs where the branch and bound returned nothing,
+and the curve is monotone, but the values sit 4.8 to 19.7 times above the
+theoretical wall $1/F^3$. They are valid upper bounds, not converged ones:
+condensation reaches a KKT point, and three starts with two sweeps is not enough.
+More starts and more sweeps are now cheap, since one solve costs seconds.
+
+So $J_c \propto 1/(m+1)$, the content of criterion S5, is still unverified. The
+route is open and inexpensive; it needs compute, not new ideas.
 
 ## Verdict pipeline
 
