@@ -61,39 +61,54 @@ generation; every point stays independent and restartable.
 
 ## Closed-form law
 
-With $q$ the fraction of flux rejected at the checkpoint, a checking stage
-discriminates by $1/(1+q(F-1))$, so with $m-1$ stages
+The saturation curve is solved analytically for $m=2$, with no free parameter.
+Apply the matrix-tree theorem to the triangle with the optimal architecture
+($a_3=0$, no direct binding to the checked state; $s=b_2/b_3=0$, no
+back-stepping). With $r=b_1/a_2$ the rejection ratio at the first checkpoint,
 
-$$\varepsilon(q)=\frac{1}{F}\big[1+q(F-1)\big]^{-(m-1)},\qquad q_{\max}=1-\frac{L J_0}{A}$$
+$$\varepsilon(r)=\frac{1+1/r}{F\,(F+1/r)},\qquad v_1(r)=\frac{1+r}{1+Fr}$$
 
-giving $1/F^m$ at zero throughput and $1/F$ when the capacity is exhausted. With
-$x = L J_0/A$ the fraction of budget consumed by throughput, the checking stage
-is fully lost at $x=1$:
+giving $1/F^2$ as $r\to\infty$ and $1/F$ as $r\to 0$. The current is the same on
+the three edges of the cycle, so the traffic per edge follows, and the wrong
+branch is not negligible: its binding flux is identical and its dissociation flux
+is $v_1\pi_1Fb_1$, which equals the right-branch one for large $r$ because
+$v_1\to 1/F$. Hence
 
-$$J_c=\frac{A}{L}\qquad (J_c\propto 1/L)$$
+$$L(r)=\frac{A}{J}=(3+2r)+(1+r)+rFv_1(r)+v_1(r)+\varepsilon(r)F$$
 
-exact and independent of $F$. `analytic.py` also returns `J_pole`, the pole of
-the algebraic form at $x=F/(F-1)$, since a free fit of $1/\beta$ against $1/J$
-extrapolates there rather than to $J_c$; the two differ by $1/(F-1)$.
+Since the budget is saturated, $L=A/J_0$ is fixed by the operating point: invert
+$L(r)=A/J_0$ and read $\varepsilon(r)$.
 
-Checked against the $m=2$, $F=50$ sweep: $L = 4.318$ with 5.4% spread and
-largest residual 9.7%, no fitted parameter. The monotone drift of $L$
-(4.00 to 4.66) is second order: the futile cycle and the productive path share
-their first edges, so the exact budget needs $L_s$, $L_r$ and $L_p$ separately.
+At collapse ($r\to0$) every edge of both branches carries exactly $J$, so
+$L_{\min}=2(m+1)$ and
 
-The sweep therefore tests a parameter-free prediction rather than searching for a
-functional form. Criteria A1 and A2 compare against the law, not a free fit.
+$$J_c=\frac{A}{2(m+1)}\qquad\Longrightarrow\qquad \frac{J_c(m{=}3)}{J_c(m{=}2)}=\frac{6}{8}=0.75$$
+
+exact and independent of $F$. This is the prediction linking saturation to
+topology, and it is the content of criterion S5.
+
+Check against the $m=2$, $F=50$ sweep (5 points, $J_0$ from 0.005 to 0.13):
+residuals $+0.01\%$, $-0.09\%$, $-0.79\%$, $-1.22\%$, $-0.84\%$. All within
+1.3% with nothing fitted. The residuals are systematically negative by about 1%,
+matching the search bias measured in the convergence study: a branch and bound
+that misses an incumbent reports the wall too high. The law is the true wall and
+the numerics sit just above it.
+
+The sweep therefore tests a parameter-free prediction. A1 checks the size of the
+residuals, A2 checks their sign.
 
 ### Open
 
-$J_c \propto 1/L$ is decided at $m=3$ and is not yet checked. With three outer
-dimensions the seeder does not reach the target region: undriven rate sampling
-gives $v_m \sim 1/F$ while the wall is at $1/F^m$, so candidates lie inside the
-box but violate $v_m \le \varepsilon$ and no incumbent is found. The symptom is
-feasibility that is not monotone in $\varepsilon$. `rate_space_seeder` already
-injects a cycle affinity scaling as $3m\ln F$ and filters by distance to target;
-this is not sufficient at $m=3$ with 40 nodes. The likely fix is to construct
-seeds backwards from the target using the matrix-tree theorem.
+The derivation above is for $m=2$. The generalisation $L_{\min}=2(m+1)$ follows
+from the same counting, but $J_c \propto 1/(m+1)$ is not yet verified
+numerically. With three outer dimensions the seeder does not reach the target
+region: undriven rate sampling gives $v_m \sim 1/F$ while the wall is at
+$1/F^m$, so candidates lie inside the box but violate $v_m \le \varepsilon$ and
+no incumbent is found. The symptom is feasibility that is not monotone in
+$\varepsilon$. `rate_space_seeder` already injects a cycle affinity scaling as
+$3m\ln F$ and filters by distance to target; this is not sufficient at $m=3$
+with 40 nodes. The likely fix is to construct seeds backwards from the target
+using the matrix-tree theorem, which is also what produced the closed form above.
 
 ## Verdict pipeline
 
