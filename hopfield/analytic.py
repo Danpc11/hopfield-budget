@@ -33,16 +33,30 @@ ones, which is what proofreading is.
 Since the budget is saturated, L = A/J0 is fixed by the operating point. Invert
 L(r) = A/J0 for r, then eps(r) gives the error floor. NO free parameter.
 
-Collapse: as r -> 0 every edge of both branches carries exactly J, so
+Collapse. L(r) is NOT monotone. Writing u = F r and using eps(r) F = v_1(r),
+which follows from the two expressions above, it collapses to
 
-    L_min = 2 (m + 1) = 6        =>     J_c = A / 6     (for m = 2)
+    L(u) = 4 + 3r + (1 + r) (u + 2) / (1 + u)
+         = 5 + 1/u + 4u/F + O(1/F)          for u >> 1
 
-exact, and independent of F. In general the cycle has m+1 edges and both branches
-carry the same traffic at collapse, so L_min = 2(m+1) and
+whose minimum sits at u* = sqrt(F)/2, that is
 
-    J_c = A / (2(m+1))           =>     J_c(m=3)/J_c(m=2) = 6/8 = 0.75
+    r* = 1 / (2 sqrt(F)),     L_min = 5 + 4/sqrt(F) + O(1/F)
 
-That is the prediction linking saturation to topology, now analytic.
+At r = 0 one gets L = 2(m+1) = 6, twice the cycle length, because both branches
+then carry the full current on every edge. The optimum is lower than that: a
+small rejection ratio suppresses the wrong branch (v_1 < 1) and saves more
+turnover than the futile cycle costs. So the machine does NOT switch proofreading
+off at collapse; it keeps r* = 1/(2 sqrt(F)).
+
+The collapse throughput is therefore
+
+    J_c = A / L_min ,          L_min = min_r L(r)
+
+which depends on F, weakly, through the 4/sqrt(F) term. For F = 50 this gives
+J_c = 0.1818 at A = 1, against 0.182 from an independent free fit of the
+numerics. The asymptotic form is accurate to 1.2% at F = 50 and to 0.1% at
+F = 10^4; the code uses the numerical minimum, not the asymptotic one.
 
 CHECK against the m=2, F=50 sweep (5 points, J0 from 0.005 to 0.13):
 residuals +0.01%, -0.09%, -0.79%, -1.22%, -0.84%. All within 1.3% with no fitted
@@ -76,23 +90,44 @@ def L_of_r(r, F: float):
     return (3.0 + 2.0 * r) + (1.0 + r) + r * F * w + w + eps_of_r(r, F) * F
 
 
-def L_min(m: int = 2) -> float:
-    """Traffic per unit current at collapse: m+1 edges in the cycle, two branches."""
-    return 2.0 * (m + 1)
+def r_star(F: float) -> float:
+    """Rejection ratio that minimises the traffic, asymptotically 1/(2 sqrt(F))."""
+    from scipy.optimize import minimize_scalar
+    g = np.geomspace(1e-8, 1e2, 3000)
+    L = np.array([L_of_r(r, F) for r in g])
+    i = int(np.argmin(L))
+    lo, hi = np.log(g[max(i - 1, 0)]), np.log(g[min(i + 1, len(g) - 1)])
+    res = minimize_scalar(lambda t: L_of_r(np.exp(t), F),
+                          bracket=(lo, np.log(g[i]), hi))
+    return float(np.exp(res.x))
 
 
-def Jc(A: float = 1.0, m: int = 2) -> float:
-    """Collapse throughput. Exact, and independent of F."""
-    return A / L_min(m)
+def L_min(F: float, m: int = 2) -> float:
+    """Smallest traffic per unit current. L(r) is not monotone, so this is a
+    minimum over r and not the value at r = 0, which is 2(m+1)."""
+    return float(L_of_r(r_star(F), F))
+
+
+def L_min_asymptotic(F: float) -> float:
+    """Leading behaviour, 5 + 4/sqrt(F). Accurate to 1.2% at F = 50."""
+    return 5.0 + 4.0 / np.sqrt(F)
+
+
+def Jc(F: float, A: float = 1.0, m: int = 2) -> float:
+    """Collapse throughput, A / L_min. Depends on F through the 4/sqrt(F) term."""
+    return A / L_min(F, m)
 
 
 def r_of_J(J0: float, F: float, A: float = 1.0):
     """Invert L(r) = A/J0. Returns None if J0 is above the collapse point."""
     target = A / J0
-    if target <= L_min():
-        return None
+    rs = r_star(F)
+    if target <= L_of_r(rs, F):
+        return None                       # beyond the collapse point
     try:
-        return brentq(lambda x: L_of_r(x, F) - target, 1e-9, 1e9)
+        # L(r) is not monotone: the branch we want is the one above r*, where
+        # more rejection buys more accuracy at the price of more traffic.
+        return brentq(lambda x: L_of_r(x, F) - target, rs, 1e9)
     except ValueError:
         return None
 
@@ -121,6 +156,6 @@ def check(J0, wall_meas, F: float, m: int = 2, A: float = 1.0,
     return dict(residuals=res.tolist(),
                 max_abs_residual=float(np.max(np.abs(res[ok]))),
                 mean_residual=float(np.mean(res[ok])),
-                Jc=Jc(A, m), L_min=L_min(m),
+                Jc=Jc(F, A, m), L_min=L_min(F, m), r_star=r_star(F),
                 n_points=int(ok.sum()),
                 passes=bool(np.max(np.abs(res[ok])) < tol))
