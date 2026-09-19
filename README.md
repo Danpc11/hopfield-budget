@@ -3,6 +3,9 @@
 Certified convex optimisation for the dissipation-function design problem in
 proofreading networks, together with a closed-form saturation law and its check.
 
+The derivations, with a status table separating what is proven from what is
+measured, conjectured or retracted, are in [THEORY.md](THEORY.md).
+
 ## Problem
 
 For an $m$-stage proofreading network with discrimination factor $F$, we compute
@@ -230,6 +233,7 @@ make_tasks.py          grid as a text file, for external tools
 aggregate.py           walls, monotonicity and convergence checks, fits
 verdict.py             criteria fixed in advance, verdict and prediction
 test/                  25 tests of the invariants (~55 s)
+THEORY.md              derivations and status of every claim
 env.sh, setup.sh       environment and one-command install
 ```
 
