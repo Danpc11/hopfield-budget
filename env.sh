@@ -10,9 +10,13 @@ if [ ! -d "$VENV" ]; then
 fi
 source "$VENV/bin/activate"
 
-# For reproducible runs: the solver must be single threaded and the Python hash
-# seed must be fixed.
+# For reproducible runs the solver must be single threaded and the Python hash
+# seed must be fixed. RAYON is the one people forget: CLARABEL is written in Rust
+# and opens its own thread pool, which the BLAS variables do not control.
 export PYTHONHASHSEED=0
 export OMP_NUM_THREADS=1
 export OPENBLAS_NUM_THREADS=1
 export MKL_NUM_THREADS=1
+export NUMEXPR_NUM_THREADS=1
+export VECLIB_MAXIMUM_THREADS=1
+export RAYON_NUM_THREADS=1
