@@ -20,9 +20,15 @@ from __future__ import annotations
 
 import os
 
+# Pin every solve to one thread, before numpy or the solver are imported.
+# RAYON_NUM_THREADS matters as much as the BLAS ones: CLARABEL is written in Rust
+# and opens its own thread pool, which none of the OMP/MKL/OpenBLAS variables
+# control. Without it every worker spawns a pool of its own and they all fight
+# for the same cores, which makes a large --jobs slower than a small one.
+# Forced rather than setdefault, so the behaviour does not depend on the shell.
 for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
-           "NUMEXPR_NUM_THREADS"):
-    os.environ.setdefault(_v, "1")          # must be set before numpy is imported
+           "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "RAYON_NUM_THREADS"):
+    os.environ[_v] = "1"
 
 import argparse
 import itertools
