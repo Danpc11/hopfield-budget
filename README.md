@@ -160,16 +160,24 @@ wall_curve(m=3, F=20.0, J0_list=[3e-3, 1e-2, 2e-2, 4e-2], starts=3, sweeps=2)
 
 ### Open
 
-At $m=3$ the signomial route runs where the branch and bound returned nothing,
-and the curve is monotone, but the values sit 4.8 to 19.7 times above the
-theoretical wall $1/F^3$. They are valid upper bounds, not converged ones:
-condensation reaches a KKT point, and three starts with two sweeps is not enough.
-More starts and more sweeps are now cheap, since one solve costs seconds.
+At $m=3$ the signomial route runs where the branch and bound returned nothing.
+With three starts the values sat 4.8 times above the wall $1/F^3$; with 48 they
+fall to 1.21, and 300 starts at the same throughput return the identical value,
+so that point is converged. The curve is monotone throughout.
+
+Two questions remain open there. Whether the $m=3$ wall reaches $1/F^3$ as the
+throughput goes to zero is not settled: over $J_0$ from $10^{-4}$ to
+$3\times10^{-3}$ the ratio falls only from 1.075 to 1.266, and a fit with a free
+floor is not identifiable over that range (the same fit applied to $m=2$, where
+the law requires a floor of exactly 1, returns 0.90). And $J_c(m=3)$ is not
+located: the grid has not reached close enough to the divergence.
 
 So the behaviour of $J_c$ with $m$, the content of criterion S5, is still
-unverified, and the traffic count of the previous section has not been redone for
-$m>2$. The route is open and inexpensive; it needs compute for the numerics and
-algebra for the count.
+unverified, and the traffic count has not been redone for $m>2$. Settling it
+needs throughputs two decades below the current range and a value of $m_{}=4$,
+which `Posy` can now reach: evaluating the posynomials directly overflowed at
+$m=4$, where the tree monomials reach degree four over log-rates of order nine,
+so `log_value` uses log-sum-exp and condensation computes its weights in logs.
 
 ## Verdict pipeline
 
@@ -221,7 +229,7 @@ run_point.py           single point, for debugging
 make_tasks.py          grid as a text file, for external tools
 aggregate.py           walls, monotonicity and convergence checks, fits
 verdict.py             criteria fixed in advance, verdict and prediction
-tests/                 25 tests of the invariants (~55 s)
+test/                  25 tests of the invariants (~55 s)
 env.sh, setup.sh       environment and one-command install
 ```
 
