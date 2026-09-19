@@ -13,8 +13,9 @@ import argparse
 import os
 import sys
 
-for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
-    os.environ.setdefault(_v, "1")
+for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
+           "NUMEXPR_NUM_THREADS", "RAYON_NUM_THREADS"):
+    os.environ[_v] = "1"
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from hopfield.runner import run_point
