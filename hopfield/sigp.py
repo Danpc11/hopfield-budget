@@ -93,8 +93,23 @@ class Posy:
         ks = list(key)
         return Posy(np.array([key[k] for k in ks]), np.array(ks, float))
 
+    def log_value(self, x):
+        """log p(x), computed with the log-sum-exp trick.
+
+        Evaluating sum_k c_k exp(a_k . x) directly overflows once the exponents
+        and the log-rates get large: at m = 4 the tree monomials reach degree 4
+        or more over log-rates of order 9, so exp(36) overflows before the sum is
+        taken. Everything downstream needs ratios, so we work in logs."""
+        t = np.log(self.c) + self.E @ np.asarray(x, float)
+        mx = np.max(t)
+        if not np.isfinite(mx):
+            return mx
+        return float(mx + np.log(np.sum(np.exp(t - mx))))
+
     def value(self, x):
-        return float(np.sum(self.c * np.exp(self.E @ np.asarray(x, float))))
+        """p(x). Overflows for large arguments by construction; prefer
+        log_value and work with log-differences."""
+        return float(np.exp(self.log_value(x)))
 
     def log_expr(self, xvar):
         """log-sum-exp form: convex in the log-variables."""
@@ -105,11 +120,11 @@ class Posy:
         Returns (log_coefficient, exponent vector), so that
         ln p_hat(x) = log_coefficient + exponent . x  and  p_hat <= p."""
         x0 = np.asarray(x0, float)
-        t = self.c * np.exp(self.E @ x0)
-        p = t.sum()
-        u = t / p
+        t = np.log(self.c) + self.E @ x0
+        lp = self.log_value(x0)
+        u = np.exp(t - lp)                     # weights, stable even when p is huge
         a = u @ self.E
-        return float(np.log(p) - a @ x0), a
+        return float(lp - a @ x0), a
 
 
 # ------------------------------------------------- matrix-tree posynomials ---
@@ -319,9 +334,15 @@ def wall_sigp(m: int, F: float, J0: float, A: float = 1.0, iters: int = 40,
             continue
 
         xn = np.asarray(y.value, float)
-        eps = P["num"].value(xn) / P["den"].value(xn)        # exact, not condensed
-        feas = (P["fwd"].value(xn) - P["bwd"].value(xn) >= J0 * P["Z"].value(xn) * (1 - 1e-6)
-                and P["traffic"].value(xn) <= A * P["Z"].value(xn) * (1 + 1e-6))
+        # everything in logs: the posynomials themselves can overflow, the ratios
+        # cannot.
+        eps = float(np.exp(P["num"].log_value(xn) - P["den"].log_value(xn)))
+        lZ = P["Z"].log_value(xn)
+        lf, lb = P["fwd"].log_value(xn), P["bwd"].log_value(xn)
+        s0 = max(lf, lb, lZ)
+        net = np.exp(lf - s0) - np.exp(lb - s0)
+        feas = (net >= J0 * np.exp(lZ - s0) * (1 - 1e-6)
+                and P["traffic"].log_value(xn) <= np.log(A) + lZ + 1e-6)
         hist.append(dict(it=it, eps=float(eps), feasible=bool(feas), trust=float(tr)))
         if feas and eps < best:
             best, best_x = float(eps), xn
