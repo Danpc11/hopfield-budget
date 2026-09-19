@@ -18,5 +18,5 @@ dev = ["pytest>=7.0"]
 packages = ["hopfield"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["test"]
 markers = ["slow: takes seconds, not milliseconds"]
